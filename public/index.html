@@ -28,16 +28,35 @@
         />
         <button type="submit">Start Jam Session</button>
         <p id="error" class="error" hidden></p>
+        <p class="hint tip">
+          Tip: on any YouTube page, just swap <code>youtube.com</code> for this
+          site's domain in the address bar — we'll spin up a fresh jam with that
+          video.
+        </p>
+      </form>
+
+      <form id="join-form" class="card join-card">
+        <label for="session-id">Or join an existing jam</label>
+        <input
+          id="session-id"
+          name="session-id"
+          type="text"
+          placeholder="paste a session ID or full jam link"
+          autocomplete="off"
+          required
+        />
+        <button type="submit">Join Session</button>
+        <p id="join-error" class="error" hidden></p>
       </form>
 
       <section class="how">
         <h2>How it works</h2>
         <ol>
-          <li>Paste any YouTube URL.</li>
+          <li>Paste any YouTube URL — or swap <code>youtube.com</code> for our domain.</li>
           <li>We give you a shareable link.</li>
           <li>
-            Everyone who opens the link plays, pauses, and seeks together — in
-            real time.
+            Everyone who opens the link plays, pauses, seeks, and even
+            <em>changes the video</em> together — in real time.
           </li>
         </ol>
         <p class="hint">
@@ -55,8 +74,10 @@
 
     <script src="/youtube-url.js"></script>
     <script>
-      const form = document.getElementById("create-form");
+      const createForm = document.getElementById("create-form");
       const errorEl = document.getElementById("error");
+      const joinForm = document.getElementById("join-form");
+      const joinError = document.getElementById("join-error");
 
       function newSessionId() {
         // 10 url-safe chars, ~52 bits of entropy. Collisions are not
@@ -69,7 +90,32 @@
         return id;
       }
 
-      form.addEventListener("submit", (e) => {
+      // Accepts a raw session id (any short token) or a full jam URL containing
+      // `?session=ID`. Returns the extracted id or null.
+      function parseSessionId(input) {
+        if (!input) return null;
+        const trimmed = String(input).trim();
+        try {
+          const url = new URL(
+            trimmed.startsWith("http") ? trimmed : `https://${trimmed}`,
+          );
+          const s = url.searchParams.get("session");
+          if (s) {
+            return {
+              session: s,
+              video: url.searchParams.get("v") || null,
+            };
+          }
+        } catch {
+          // not a URL, fall through to raw-id handling
+        }
+        if (/^[A-Za-z0-9_-]{4,64}$/.test(trimmed)) {
+          return { session: trimmed, video: null };
+        }
+        return null;
+      }
+
+      createForm.addEventListener("submit", (e) => {
         e.preventDefault();
         errorEl.hidden = true;
 
@@ -84,6 +130,25 @@
 
         const sessionId = newSessionId();
         location.href = `/watch?v=${videoId}&session=${sessionId}`;
+      });
+
+      joinForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        joinError.hidden = true;
+
+        const raw = document.getElementById("session-id").value;
+        const parsed = parseSessionId(raw);
+        if (!parsed) {
+          joinError.textContent =
+            "That doesn't look like a session ID or jam link.";
+          joinError.hidden = false;
+          return;
+        }
+
+        const qs = new URLSearchParams();
+        qs.set("session", parsed.session);
+        if (parsed.video) qs.set("v", parsed.video);
+        location.href = `/watch?${qs.toString()}`;
       });
     </script>
   </body>

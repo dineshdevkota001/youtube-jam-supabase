@@ -2,14 +2,29 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
 // --- URL params ------------------------------------------------------------
 const params = new URLSearchParams(location.search);
-const videoId = params.get("v");
-const sessionId = params.get("session");
+let videoId = params.get("v");
+let sessionId = params.get("session");
 
-if (!videoId || !sessionId) {
+// `mydomain.com/watch?v=ID` (e.g. user swapped `youtube.com` for our host):
+// no session given → spin one up so the page becomes a fresh shareable jam.
+function newSessionId() {
+  const alphabet = "23456789abcdefghjkmnpqrstuvwxyz";
+  const arr = new Uint32Array(10);
+  crypto.getRandomValues(arr);
+  let id = "";
+  for (const n of arr) id += alphabet[n % alphabet.length];
+  return id;
+}
+
+if (!sessionId && videoId) {
+  sessionId = newSessionId();
+}
+
+if (!sessionId) {
   document.body.innerHTML =
-    '<main class="landing"><div class="card"><h2>Missing video or session</h2>' +
+    '<main class="landing"><div class="card"><h2>Missing session</h2>' +
     '<p>This link is incomplete. <a href="/">Start a new jam</a>.</p></div></main>';
-  throw new Error("missing v or session in URL");
+  throw new Error("missing session in URL");
 }
 
 // --- Identity --------------------------------------------------------------
@@ -39,15 +54,31 @@ const me = {
   name: loadName(),
 };
 
-// --- Share link UI ---------------------------------------------------------
-const shareUrl = location.href;
+// --- URL / share-link sync -------------------------------------------------
+// The URL is our source of truth for `session` and `v`. When either changes
+// (e.g. video swap), we rewrite the address bar via history.replaceState so
+// reloads / copies stay in sync with the current jam state.
 const shareInput = document.getElementById("share-link");
-shareInput.value = shareUrl;
 const copyBtn = document.getElementById("copy-btn");
 const copyToast = document.getElementById("copy-toast");
+
+function currentShareUrl() {
+  const url = new URL(location.origin + "/watch");
+  url.searchParams.set("session", sessionId);
+  if (videoId) url.searchParams.set("v", videoId);
+  return url.toString();
+}
+
+function syncUrl() {
+  const url = currentShareUrl();
+  history.replaceState(null, "", url);
+  shareInput.value = url;
+}
+syncUrl();
+
 copyBtn.addEventListener("click", async () => {
   try {
-    await navigator.clipboard.writeText(shareUrl);
+    await navigator.clipboard.writeText(shareInput.value);
   } catch {
     shareInput.select();
     document.execCommand("copy");
@@ -63,17 +94,44 @@ function setStatus(text, kind = "") {
   statusEl.className = "status" + (kind ? " " + kind : "");
 }
 
+// --- Change-video form -----------------------------------------------------
+const changeForm = document.getElementById("change-video-form");
+const changeInput = document.getElementById("change-video-input");
+const changeError = document.getElementById("change-video-error");
+const playerEmpty = document.getElementById("player-empty");
+
+changeForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  changeError.hidden = true;
+  const raw = changeInput.value.trim();
+  const id = parseYouTubeId(raw);
+  if (!id) {
+    changeError.textContent =
+      "Couldn't find a YouTube video ID in that link.";
+    changeError.hidden = false;
+    return;
+  }
+  if (id === videoId) {
+    changeError.textContent = "That's already the current video.";
+    changeError.hidden = false;
+    return;
+  }
+  changeInput.value = "";
+  changeVideo(id, { time: 0, isPlaying: true, broadcast: true });
+});
+
 // --- YouTube IFrame Player -------------------------------------------------
 let player = null;
 let playerReady = false;
+let ytApiReady = false;
 const pendingActions = []; // queue actions until player is ready
 
-// `suppressBroadcast` is set true while we're applying a remote action to the
+// `suppressBroadcast` is set while we're applying a remote action to the
 // player, so the resulting state-change event doesn't echo back as a new
-// broadcast. We use a counter (in case of nested triggers) and a small
-// timestamp so we don't get stuck suppressing forever if YT swallows an event.
+// broadcast. We use a small timestamp window so we don't get stuck suppressing
+// forever if YT swallows an event.
 let suppressUntil = 0;
-function suppressOnce(ms = 600) {
+function suppressOnce(ms = 800) {
   suppressUntil = Math.max(suppressUntil, Date.now() + ms);
 }
 function isSuppressed() {
@@ -81,6 +139,17 @@ function isSuppressed() {
 }
 
 window.onYouTubeIframeAPIReady = () => {
+  ytApiReady = true;
+  tryCreatePlayer();
+};
+
+const ytTag = document.createElement("script");
+ytTag.src = "https://www.youtube.com/iframe_api";
+document.head.appendChild(ytTag);
+
+function tryCreatePlayer() {
+  if (player || !ytApiReady || !videoId) return;
+  if (playerEmpty) playerEmpty.remove();
   player = new YT.Player("player", {
     width: "100%",
     height: "100%",
@@ -99,15 +168,61 @@ window.onYouTubeIframeAPIReady = () => {
       onStateChange: onPlayerStateChange,
     },
   });
-};
-
-const ytTag = document.createElement("script");
-ytTag.src = "https://www.youtube.com/iframe_api";
-document.head.appendChild(ytTag);
+}
 
 function whenReady(fn) {
   if (playerReady) fn();
   else pendingActions.push(fn);
+}
+
+// Swap the loaded video. `time` is the desired starting offset (in seconds);
+// `isPlaying` controls autoplay; `broadcast` decides whether to tell the room.
+function changeVideo(newVideoId, { time = 0, isPlaying = true, broadcast = false } = {}) {
+  if (!newVideoId) return;
+  const sameVideo = newVideoId === videoId;
+  videoId = newVideoId;
+  syncUrl();
+
+  // Reset seek-detection so the time jump to 0 doesn't fire a phantom seek.
+  lastObservedTime = time;
+  lastObservedAt = Date.now();
+
+  if (!player) {
+    tryCreatePlayer();
+    // First-time player creation already uses `videoId`; if we need a non-zero
+    // start time, apply it once the player is ready.
+    if (time > 0 || !isPlaying) {
+      whenReady(() => {
+        suppressOnce(1500);
+        player.seekTo(time, true);
+        if (!isPlaying) player.pauseVideo();
+      });
+    }
+  } else if (sameVideo) {
+    whenReady(() => {
+      suppressOnce();
+      player.seekTo(time, true);
+      if (isPlaying) player.playVideo();
+      else player.pauseVideo();
+    });
+  } else {
+    whenReady(() => {
+      suppressOnce(1500);
+      if (isPlaying) {
+        player.loadVideoById({ videoId: newVideoId, startSeconds: time });
+      } else {
+        player.cueVideoById({ videoId: newVideoId, startSeconds: time });
+      }
+    });
+  }
+
+  if (broadcast) {
+    sendBroadcast("video_change", {
+      videoId: newVideoId,
+      time,
+      isPlaying,
+    });
+  }
 }
 
 function onPlayerStateChange(e) {
@@ -189,6 +304,9 @@ async function init() {
   channel.on("broadcast", { event: "sync_state" }, ({ payload }) =>
     handleSyncState(payload),
   );
+  channel.on("broadcast", { event: "video_change" }, ({ payload }) =>
+    handleVideoChange(payload),
+  );
 
   channel.on("presence", { event: "sync" }, () => renderUsers());
   channel.on("presence", { event: "join" }, () => renderUsers());
@@ -196,14 +314,17 @@ async function init() {
 
   channel.subscribe(async (status) => {
     if (status === "SUBSCRIBED") {
-      setStatus("connected", "ok");
+      setStatus(videoId ? "connected" : "waiting for video…", videoId ? "ok" : "");
       await channel.track({ name: me.name, joinedAt: Date.now() });
-      // Ask anyone in the room for the current playhead.
+      // Ask anyone in the room for the current video + playhead.
       sendBroadcast("sync_request", { from: me.id });
-      // If no one answers within 1.5s, we just stay paused at 0 — we're
-      // probably the first one in.
+      // If no one answers within 1.5s, we're probably the first one in.
       setTimeout(() => {
-        if (!synced) synced = true;
+        if (synced) return;
+        synced = true;
+        if (!videoId) {
+          setStatus("no video yet — paste a YouTube link to start", "");
+        }
       }, 1500);
     } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
       setStatus("connection lost", "error");
@@ -250,10 +371,23 @@ function applyRemote(kind, payload) {
   });
 }
 
+function handleVideoChange(payload) {
+  if (!payload || payload.byId === me.id) return;
+  const drift = (Date.now() - (payload.at || Date.now())) / 1000;
+  const isPlaying = !!payload.isPlaying;
+  const target = (payload.time || 0) + (isPlaying ? Math.max(0, drift) : 0);
+  changeVideo(payload.videoId, {
+    time: target,
+    isPlaying,
+    broadcast: false,
+  });
+  synced = true;
+}
+
 // Late-joiner sync: any client receiving sync_request replies with current state.
 let lastSyncReplyAt = 0;
 function handleSyncRequest(payload) {
-  if (!playerReady) return;
+  if (!playerReady || !videoId) return;
   if (payload?.from === me.id) return;
   // Throttle: at most one reply per second across multiple requests.
   if (Date.now() - lastSyncReplyAt < 1000) return;
@@ -261,6 +395,7 @@ function handleSyncRequest(payload) {
   const state = player.getPlayerState();
   sendBroadcast("sync_state", {
     to: payload.from,
+    videoId,
     time: player.getCurrentTime(),
     isPlaying: state === YT.PlayerState.PLAYING,
   });
@@ -270,13 +405,26 @@ function handleSyncState(payload) {
   if (synced) return;
   if (payload?.to && payload.to !== me.id) return;
   synced = true;
+  const drift = (Date.now() - (payload.at || Date.now())) / 1000;
+  const isPlaying = !!payload.isPlaying;
+  const target = (payload.time || 0) + (isPlaying ? Math.max(0, drift) : 0);
+
+  // Late-joiner needs the room's current video. Either we have none yet, or
+  // it differs from what's loaded — swap in either case.
+  if (payload.videoId && payload.videoId !== videoId) {
+    changeVideo(payload.videoId, {
+      time: target,
+      isPlaying,
+      broadcast: false,
+    });
+    setStatus("connected", "ok");
+    return;
+  }
+
   whenReady(() => {
-    const drift = (Date.now() - (payload.at || Date.now())) / 1000;
-    const target =
-      (payload.time || 0) + (payload.isPlaying ? Math.max(0, drift) : 0);
     suppressOnce();
     player.seekTo(target, true);
-    if (payload.isPlaying) player.playVideo();
+    if (isPlaying) player.playVideo();
     else player.pauseVideo();
   });
 }

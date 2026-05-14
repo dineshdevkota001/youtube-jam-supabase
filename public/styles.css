@@ -120,11 +120,27 @@ input[type="text"]:focus {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-#create-form button {
+#create-form button,
+#join-form button {
   width: 100%;
   margin-top: 12px;
   padding: 14px;
   font-size: 16px;
+}
+
+.join-card {
+  margin-top: 16px;
+}
+.join-card label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tip {
+  margin-top: 14px;
 }
 
 .error {
@@ -235,6 +251,21 @@ input[type="text"]:focus {
 #player {
   width: 100%;
   height: 100%;
+}
+.player-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.change-label {
+  margin-top: 14px;
 }
 
 .side {

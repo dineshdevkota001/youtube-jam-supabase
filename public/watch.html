@@ -23,10 +23,27 @@
           <button id="copy-btn" type="button">Copy</button>
         </div>
         <div id="copy-toast" class="copy-toast" hidden>Link copied!</div>
+
+        <div class="share-label change-label">Change video</div>
+        <form id="change-video-form" class="share-row">
+          <input
+            id="change-video-input"
+            type="text"
+            placeholder="Paste another YouTube link to swap the video for everyone…"
+            autocomplete="off"
+          />
+          <button type="submit">Load</button>
+        </form>
+        <p id="change-video-error" class="error" hidden></p>
       </section>
 
       <section class="player-wrap">
-        <div id="player"></div>
+        <div id="player">
+          <div class="player-empty" id="player-empty">
+            Waiting for a video from the jam… or paste a YouTube link above to
+            start one.
+          </div>
+        </div>
       </section>
 
       <section class="side">
