@@ -28,31 +28,63 @@ if (!sessionId) {
 }
 
 // --- Identity --------------------------------------------------------------
+const NAME_KEY = "yt-jam-name";
+const NAME_MAX = 32;
+
+function randomName() {
+  const adjectives = [
+    "calm",
+    "brave",
+    "lucky",
+    "loud",
+    "quick",
+    "wild",
+    "kind",
+  ];
+  const animals = ["otter", "fox", "wolf", "panda", "tiger", "moose", "owl"];
+  return (
+    adjectives[Math.floor(Math.random() * adjectives.length)] +
+    "-" +
+    animals[Math.floor(Math.random() * animals.length)]
+  );
+}
+
+function sanitizeName(raw) {
+  // Collapse whitespace, strip control chars, cap to NAME_MAX.
+  return String(raw || "")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, NAME_MAX);
+}
+
 function loadName() {
-  let n = localStorage.getItem("yt-jam-name");
-  if (!n) {
-    const adjectives = [
-      "calm",
-      "brave",
-      "lucky",
-      "loud",
-      "quick",
-      "wild",
-      "kind",
-    ];
-    const animals = ["otter", "fox", "wolf", "panda", "tiger", "moose", "owl"];
-    n =
-      adjectives[Math.floor(Math.random() * adjectives.length)] +
-      "-" +
-      animals[Math.floor(Math.random() * animals.length)];
-    localStorage.setItem("yt-jam-name", n);
-  }
+  const stored = sanitizeName(localStorage.getItem(NAME_KEY));
+  if (stored) return stored;
+  const n = randomName();
+  localStorage.setItem(NAME_KEY, n);
   return n;
 }
+
 const me = {
   id: crypto.randomUUID(),
   name: loadName(),
+  joinedAt: Date.now(),
 };
+
+// Update the user's display name everywhere it matters: localStorage (so it
+// survives reloads / persists across jams), presence (so others see it in the
+// users list), and future broadcasts (`sendBroadcast` reads `me.name` on each
+// send, so chat picks up the new name automatically).
+function setMyName(raw) {
+  const clean = sanitizeName(raw);
+  if (!clean || clean === me.name) return false;
+  me.name = clean;
+  localStorage.setItem(NAME_KEY, clean);
+  if (channel) channel.track({ name: me.name, joinedAt: me.joinedAt });
+  renderUsers();
+  return true;
+}
 
 // --- URL / share-link sync -------------------------------------------------
 // The URL is our source of truth for `session` and `v`. When either changes
@@ -93,6 +125,50 @@ function setStatus(text, kind = "") {
   statusEl.textContent = text;
   statusEl.className = "status" + (kind ? " " + kind : "");
 }
+
+// --- Name editor -----------------------------------------------------------
+const meNameInput = document.getElementById("me-name-input");
+const meNameSaved = document.getElementById("me-name-saved");
+meNameInput.value = me.name;
+
+let nameSaveTimer = null;
+let savedToastTimer = null;
+function flashSavedToast() {
+  meNameSaved.hidden = false;
+  clearTimeout(savedToastTimer);
+  savedToastTimer = setTimeout(() => (meNameSaved.hidden = true), 1200);
+}
+
+function commitNameFromInput() {
+  if (setMyName(meNameInput.value)) {
+    meNameInput.value = me.name; // reflect sanitized version
+    flashSavedToast();
+  }
+}
+
+meNameInput.addEventListener("input", () => {
+  clearTimeout(nameSaveTimer);
+  nameSaveTimer = setTimeout(commitNameFromInput, 500);
+});
+meNameInput.addEventListener("change", () => {
+  clearTimeout(nameSaveTimer);
+  commitNameFromInput();
+});
+meNameInput.addEventListener("blur", () => {
+  clearTimeout(nameSaveTimer);
+  if (!sanitizeName(meNameInput.value)) {
+    // Don't allow an empty name — revert to whatever we last had.
+    meNameInput.value = me.name;
+    return;
+  }
+  commitNameFromInput();
+});
+meNameInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    meNameInput.blur();
+  }
+});
 
 // --- Change-video form -----------------------------------------------------
 const changeForm = document.getElementById("change-video-form");
@@ -315,7 +391,8 @@ async function init() {
   channel.subscribe(async (status) => {
     if (status === "SUBSCRIBED") {
       setStatus(videoId ? "connected" : "waiting for video…", videoId ? "ok" : "");
-      await channel.track({ name: me.name, joinedAt: Date.now() });
+      me.joinedAt = Date.now();
+      await channel.track({ name: me.name, joinedAt: me.joinedAt });
       // Ask anyone in the room for the current video + playhead.
       sendBroadcast("sync_request", { from: me.id });
       // If no one answers within 1.5s, we're probably the first one in.
@@ -434,15 +511,18 @@ const usersEl = document.getElementById("users");
 function renderUsers() {
   if (!channel) return;
   const state = channel.presenceState();
+  // presenceState() is keyed by presence key (== me.id for us), and each entry
+  // is an array of presence records (one per tab/connection). We treat the key
+  // as the identity so renames don't double-tag "(you)".
   const flat = [];
-  for (const arr of Object.values(state)) {
-    for (const p of arr) flat.push(p);
+  for (const [key, arr] of Object.entries(state)) {
+    for (const p of arr) flat.push({ ...p, id: key });
   }
   flat.sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
   usersEl.innerHTML = "";
   for (const u of flat) {
     const li = document.createElement("li");
-    li.textContent = u.name + (u.name === me.name ? " (you)" : "");
+    li.textContent = (u.name || "anon") + (u.id === me.id ? " (you)" : "");
     usersEl.appendChild(li);
   }
 }

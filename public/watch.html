@@ -49,6 +49,18 @@
       <section class="side">
         <div class="card users-card">
           <h3>In this jam</h3>
+          <div class="me-name">
+            <label for="me-name-input">Your display name</label>
+            <input
+              id="me-name-input"
+              type="text"
+              maxlength="32"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Pick a name…"
+            />
+            <span id="me-name-saved" class="me-name-saved" hidden>saved</span>
+          </div>
           <ul id="users"></ul>
         </div>
 
