@@ -75,23 +75,61 @@ video is playing.
 
 ## Deploying
 
-Any Node host works (Render, Fly.io, Railway, a VPS, etc.). Just set:
+### Netlify (recommended — free tier)
 
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `PORT` (most platforms inject this automatically)
+This repo includes [`netlify.toml`](./netlify.toml) and a Netlify Function
+([`netlify/functions/config.mjs`](./netlify/functions/config.mjs)) that
+replaces the Express `/api/config` endpoint. No code changes needed.
 
-The whole frontend is static — you could also host `public/` on Netlify
-or Cloudflare Pages and skip the server entirely if you replace
-`/api/config` with build-time injection of those two values.
+1. Push this repo to GitHub / GitLab / Bitbucket.
+2. In Netlify: **Add new site → Import an existing project**, pick the
+   repo. Netlify reads `netlify.toml` automatically — leave the build
+   command empty and the publish directory will be `public/`.
+3. Go to **Site settings → Environment variables** and add:
+   - `SUPABASE_URL` — `https://YOUR-PROJECT-REF.supabase.co`
+   - `SUPABASE_ANON_KEY` — your anon public key
+4. **Deploy site**. Done — the URL Netlify gives you is your jam host.
+
+How the routing works on Netlify:
+
+| Path                      | Netlify behavior                                         |
+| ------------------------- | -------------------------------------------------------- |
+| `/`                       | serves `public/index.html`                               |
+| `/watch?v=…&session=…`    | rewrites to `public/watch.html` (query string preserved) |
+| `/api/config`             | invokes `netlify/functions/config.mjs`                   |
+| `/styles.css`, `/*.js`    | served from `public/`                                    |
+
+Local Netlify preview (optional):
+
+```bash
+npm install -g netlify-cli
+netlify dev
+```
+
+This runs the static site + the function locally on `http://localhost:8888`.
+
+### Other Node hosts (Render, Fly.io, Railway, VPS)
+
+Use the included Express server:
+
+```bash
+npm install
+npm start
+```
+
+Set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and (optionally) `PORT` as env
+vars on your host.
 
 ## Files
 
 ```
-server.js              tiny Express - static + /api/config + /watch route
-public/index.html      landing page
-public/watch.html      jam session page
-public/watch.js        YouTube player + Supabase Realtime sync logic
-public/youtube-url.js  parse video IDs from any YouTube URL form
-public/styles.css      styling
+server.js                       Express - static + /api/config + /watch (local dev)
+netlify.toml                    Netlify config (publish dir, redirects, headers)
+netlify/functions/config.mjs    /api/config equivalent for Netlify
+public/index.html               landing page (with Supabase connection settings)
+public/watch.html               jam session page
+public/watch.js                 YouTube player + Supabase Realtime sync
+public/supabase-config.js       config loader + connection tester
+public/youtube-url.js           parses video IDs from any YouTube URL form
+public/styles.css               styling
 ```

@@ -1,0 +1,50 @@
+# Netlify configuration for youtube-jam.
+#
+# We ship the frontend as static files from `public/` and replace the
+# Express `/api/config` endpoint with a tiny Netlify Function that reads
+# SUPABASE_URL and SUPABASE_ANON_KEY from Netlify's environment variables.
+#
+# Set those two values in:
+#   Netlify dashboard → Site settings → Environment variables
+#
+# No build step is needed — everything in `public/` is plain HTML/JS/CSS.
+
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+# Pretty URL: /watch?v=...&session=... → public/watch.html (query string is
+# preserved automatically by Netlify).
+[[redirects]]
+  from = "/watch"
+  to = "/watch.html"
+  status = 200
+
+# Frontend calls /api/config; map it to the function.
+[[redirects]]
+  from = "/api/config"
+  to = "/.netlify/functions/config"
+  status = 200
+
+# SPA-style fallback so unknown paths show the landing page instead of a
+# Netlify 404. Real assets in `public/` still take precedence over this.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Cache static assets a bit, but never cache HTML so updates ship instantly.
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=300"
+
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=300"
