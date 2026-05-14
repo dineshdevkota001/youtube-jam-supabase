@@ -1,0 +1,17 @@
+{
+  "name": "youtube-jam",
+  "version": "1.0.0",
+  "description": "Realtime YouTube jam sessions powered by Supabase Realtime - sync video playback across users via a shareable link.",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

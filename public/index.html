@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YouTube Jam — watch together in sync</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="landing">
+      <header>
+        <div class="logo">
+          <span class="dot"></span>
+          <span>YouTube Jam</span>
+        </div>
+        <p class="tag">Watch any YouTube video in perfect sync with friends.</p>
+      </header>
+
+      <form id="create-form" class="card">
+        <label for="url">Paste a YouTube link</label>
+        <input
+          id="url"
+          name="url"
+          type="text"
+          placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+          autocomplete="off"
+          required
+        />
+        <button type="submit">Start Jam Session</button>
+        <p id="error" class="error" hidden></p>
+      </form>
+
+      <section class="how">
+        <h2>How it works</h2>
+        <ol>
+          <li>Paste any YouTube URL.</li>
+          <li>We give you a shareable link.</li>
+          <li>
+            Everyone who opens the link plays, pauses, and seeks together — in
+            real time.
+          </li>
+        </ol>
+        <p class="hint">
+          Share URLs look like
+          <code>/watch?v=VIDEO_ID&amp;session=SESSION_ID</code> — the same shape
+          as a real YouTube link, just on a different host.
+        </p>
+        <p class="hint">
+          Powered by <strong>Supabase Realtime</strong> (free &amp; open
+          source). No central server, no database — sync flows peer-to-peer
+          through Supabase's broadcast channels.
+        </p>
+      </section>
+    </main>
+
+    <script src="/youtube-url.js"></script>
+    <script>
+      const form = document.getElementById("create-form");
+      const errorEl = document.getElementById("error");
+
+      function newSessionId() {
+        // 10 url-safe chars, ~52 bits of entropy. Collisions are not
+        // catastrophic (a stray joiner just lands in the wrong room).
+        const alphabet = "23456789abcdefghjkmnpqrstuvwxyz";
+        const arr = new Uint32Array(10);
+        crypto.getRandomValues(arr);
+        let id = "";
+        for (const n of arr) id += alphabet[n % alphabet.length];
+        return id;
+      }
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        errorEl.hidden = true;
+
+        const raw = document.getElementById("url").value.trim();
+        const videoId = parseYouTubeId(raw);
+        if (!videoId) {
+          errorEl.textContent =
+            "Could not find a YouTube video ID in that link.";
+          errorEl.hidden = false;
+          return;
+        }
+
+        const sessionId = newSessionId();
+        location.href = `/watch?v=${videoId}&session=${sessionId}`;
+      });
+    </script>
+  </body>
+</html>

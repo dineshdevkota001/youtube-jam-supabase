@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YouTube Jam — Session</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="watch">
+      <header class="watch-header">
+        <a href="/" class="logo">
+          <span class="dot"></span>
+          <span>YouTube Jam</span>
+        </a>
+        <div class="status" id="status">connecting…</div>
+      </header>
+
+      <section class="share-bar card">
+        <div class="share-label">Share this link with friends</div>
+        <div class="share-row">
+          <input id="share-link" type="text" readonly />
+          <button id="copy-btn" type="button">Copy</button>
+        </div>
+        <div id="copy-toast" class="copy-toast" hidden>Link copied!</div>
+      </section>
+
+      <section class="player-wrap">
+        <div id="player"></div>
+      </section>
+
+      <section class="side">
+        <div class="card users-card">
+          <h3>In this jam</h3>
+          <ul id="users"></ul>
+        </div>
+
+        <div class="card chat-card">
+          <h3>Chat</h3>
+          <div id="chat-log" class="chat-log"></div>
+          <form id="chat-form" class="chat-form">
+            <input
+              id="chat-input"
+              type="text"
+              placeholder="Say something…"
+              maxlength="500"
+              autocomplete="off"
+            />
+            <button type="submit">Send</button>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <script src="/youtube-url.js"></script>
+    <script type="module" src="/watch.js"></script>
+  </body>
+</html>
